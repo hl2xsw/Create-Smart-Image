@@ -1,0 +1,6 @@
+{
+  "name": "Smart Image Prompt Optimizer",
+  "description": "대충 입력한 아이디어를 AI 이미지 생성을 위한 고품질 영어 프롬프트로 최적화하고 이미지를 미리 생성해주는 서비스",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
