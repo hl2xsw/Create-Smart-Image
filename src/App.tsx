@@ -399,10 +399,15 @@ Generate the perfect detailed English prompt and structured details.`;
 
       // 2. Client-side direct Pollinations fallback
       if (!imageUrlToSet) {
-        const imageRes = await fetch(pollinationsUrl);
-        if (!imageRes.ok) throw new Error(`이미지 서버 응답 실패 (상태 코드: ${imageRes.status})`);
-        const blob = await imageRes.blob();
-        imageUrlToSet = URL.createObjectURL(blob);
+        try {
+          const imageRes = await fetch(pollinationsUrl);
+          if (!imageRes.ok) throw new Error(`이미지 서버 응답 실패 (상태 코드: ${imageRes.status})`);
+          const blob = await imageRes.blob();
+          imageUrlToSet = URL.createObjectURL(blob);
+        } catch (fetchErr) {
+          console.warn("Direct image blob fetch failed, falling back to raw image URL...", fetchErr);
+          imageUrlToSet = pollinationsUrl;
+        }
       }
 
       setGeneratedImageUrl(imageUrlToSet);

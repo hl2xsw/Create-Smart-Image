@@ -4,8 +4,13 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
+  // GitHub Pages deployment base path resolution
+  const isGitHubPages = process.env.GITHUB_ACTIONS === 'true';
+  const repoName = process.env.GITHUB_REPOSITORY ? process.env.GITHUB_REPOSITORY.split('/')[1] : '';
+  const base = isGitHubPages ? `/${repoName}/` : './';
+
   return {
-    base: "./",
+    base,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
