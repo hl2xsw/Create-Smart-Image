@@ -192,12 +192,94 @@ export default function App() {
     "State-of-the-art AI 전용 영어 프롬프트로 최종 정제 중..."
   ];
 
+  const isKorean = (text: string): boolean => {
+    const regExp = /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/;
+    return regExp.test(text);
+  };
+
+  const translateKoToEn = async (text: string): Promise<string> => {
+    if (!text.trim()) return "";
+    if (!isKorean(text)) return text;
+
+    try {
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=ko|en`);
+      if (!res.ok) throw new Error("Translation failed");
+      const data = await res.json();
+      if (data && data.responseData && data.responseData.translatedText) {
+        return data.responseData.translatedText;
+      }
+    } catch (err) {
+      console.warn("MyMemory translation failed, using offline fallback.", err);
+    }
+
+    let fallbackText = text;
+    const dictionary: { [key: string]: string } = {
+      "전기차": "electric car",
+      "급속충전기": "fast charger",
+      "충전기": "charger",
+      "충전하는": "charging",
+      "귀여운": "cute",
+      "강아지": "dog",
+      "개": "dog",
+      "검은": "black",
+      "고양이": "cat",
+      "우주선": "spaceship",
+      "조종사": "pilot",
+      "헬멧": "helmet",
+      "쓰고 있는": "wearing",
+      "모습": "scene",
+      "안개": "fog",
+      "자욱한": "dense",
+      "가을": "autumn",
+      "아침": "morning",
+      "햇살": "sunlight",
+      "부서지는": "scattering",
+      "숲속": "forest",
+      "오두막": "cabin",
+      "화려한": "vibrant",
+      "홀로그램": "hologram",
+      "간판": "signboard",
+      "가득한": "filled with",
+      "비 내리는": "rainy",
+      "비내리는": "rainy",
+      "서울": "Seoul",
+      "밤거리": "night street",
+      "골목": "alley",
+      "하늘": "sky",
+      "떠 있는": "floating",
+      "마법": "magic",
+      "성과": "castle and",
+      "성": "castle",
+      "핑크빛": "pink",
+      "구름": "cloud",
+      "위를": "over",
+      "날아다니는": "flying",
+      "고래": "whale",
+      "따뜻한": "warm",
+      "불빛": "light",
+      "흐르는": "glowing",
+      "레트로": "retro",
+      "카페": "cafe",
+      "조용히": "quietly",
+      "코딩하고": "coding",
+      "있는": "working",
+      "소녀": "girl"
+    };
+
+    Object.entries(dictionary).forEach(([ko, en]) => {
+      fallbackText = fallbackText.replace(new RegExp(ko, "g"), en);
+    });
+
+    return fallbackText;
+  };
+
   // Local Rule-Based Prompt Optimization Engine (Fallback for Offline / No-API-Key deployments)
   const generateLocalFallbackOptimization = (
-    rawPrompt: string,
+    translatedRaw: string,
     style: string,
     aspectRatio: string,
-    extraDetails: string
+    translatedExtra: string,
+    originalKorean: string
   ): OptimizationResult => {
     let styleKeywords: string[] = [];
     let styleDescription = "";
@@ -320,14 +402,14 @@ export default function App() {
         lightingNotes = "피사체를 가장 입체적으로 살려주는 부드러운 자연 광원";
     }
 
-    const cleanRaw = rawPrompt.trim();
-    const extraString = extraDetails.trim() ? `, ${extraDetails.trim()}` : "";
+    const cleanRaw = translatedRaw.trim();
+    const extraString = translatedExtra.trim() ? `, ${translatedExtra.trim()}` : "";
     const optimizedPromptText = `${cleanRaw}${extraString}, ${styleKeywords.join(", ")}, dynamic composition, masterpiece quality`;
 
     return {
       optimizedPrompt: optimizedPromptText,
       negativePrompt,
-      koreanTranslation: `${cleanRaw} (${styleDescription} 스타일로 최적화됨)`,
+      koreanTranslation: originalKorean.trim() ? `${originalKorean.trim()} (${styleDescription} 스타일로 최적화됨)` : `${cleanRaw} (${styleDescription} 스타일로 최적화됨)`,
       enhancements,
       compositionNotes,
       lightingNotes
@@ -343,8 +425,10 @@ export default function App() {
   ) => {
     const apiKey = customApiKey || (import.meta as any).env.VITE_GEMINI_API_KEY;
     if (!apiKey) {
-      console.log("No API Key detected. Using high-fidelity local prompt optimization engine fallback.");
-      return generateLocalFallbackOptimization(rawPrompt, style, aspectRatio, extraDetails);
+      console.log("No API Key detected. Performing smart translation & local engine fallback.");
+      const translatedRaw = await translateKoToEn(rawPrompt);
+      const translatedExtra = await translateKoToEn(extraDetails);
+      return generateLocalFallbackOptimization(translatedRaw, style, aspectRatio, translatedExtra, rawPrompt);
     }
 
     const systemInstruction = `You are an expert AI Image Generation Prompt Engineer.
