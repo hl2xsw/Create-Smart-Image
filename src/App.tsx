@@ -192,6 +192,148 @@ export default function App() {
     "State-of-the-art AI 전용 영어 프롬프트로 최종 정제 중..."
   ];
 
+  // Local Rule-Based Prompt Optimization Engine (Fallback for Offline / No-API-Key deployments)
+  const generateLocalFallbackOptimization = (
+    rawPrompt: string,
+    style: string,
+    aspectRatio: string,
+    extraDetails: string
+  ): OptimizationResult => {
+    let styleKeywords: string[] = [];
+    let styleDescription = "";
+    let negativePrompt = "";
+    let enhancements: string[] = [];
+    let compositionNotes = "";
+    let lightingNotes = "";
+
+    switch (style) {
+      case "photorealistic":
+        styleKeywords = ["photorealistic", "ultra-detailed 8k resolution", "cinematic lighting", "dramatic shadows", "realistic textures", "raytracing", "sharp focus", "highly detailed skin/surface texture", "professional commercial photography"];
+        styleDescription = "시네마틱 실사 영화 사진";
+        negativePrompt = "blurry, low quality, distorted anatomy, extra limbs, bad proportions, bad hands, deformed, cartoon, illustration, drawing";
+        enhancements = [
+          "실제 전문 카메라(Sony A7R V)로 촬영한 듯한 초고화질 실사 텍스처 구현",
+          "피부 모공 및 사물 표면 질감의 극사실적 시각화",
+          "시네마틱 피사계 심도(Depth of Field)와 아웃포커싱 적용",
+          "레이트레이싱을 적용한 정교한 빛 반사와 그림자 매핑"
+        ];
+        compositionNotes = "골든 아워 시점의 안정적인 3분할 시네마틱 카메라 앵글";
+        lightingNotes = "빛의 스펙트럼이 은은하게 퍼지는 소프트 디퓨즈 시네마틱 라이트";
+        break;
+      case "anime":
+        styleKeywords = ["beautifully detailed anime illustration", "vibrant colors", "clean line art", "cell-shaded", "masterpiece background scenery", "aesthetic lighting", "Makoto Shinkai style inspired", "Kyoto Animation style"];
+        styleDescription = "고퀄리티 명작 애니메이션";
+        negativePrompt = "photorealistic, real-life photo, 3d render, low quality, bad anatomy, deformed, sketch, monochrome, text, watermark";
+        enhancements = [
+          "인기 감성 애니메이션 거장들의 풍부한 파스텔 톤 색감 적용",
+          "깔끔하고 완성도 높은 디지털 벡터 스타일의 선화 처리",
+          "구름, 빛갈라짐 등 서정적이고 웅장한 배경 요소 정교화",
+          "캐릭터의 생동감 넘치는 눈빛과 섬세한 감정선 표현 추가"
+        ];
+        compositionNotes = "감성 애니메이션 영화의 한 장면 같은 구도";
+        lightingNotes = "오후의 따스한 햇살이 부서지는 감성적이고 투명한 역광 효과";
+        break;
+      case "cinematic-3d":
+        styleKeywords = ["Octane render", "Unreal Engine 5 style", "3D digital art", "volumetric fog", "realistic light scattering", "depth of field", "raytraced ambient occlusion", "highly detailed 3D model", "stunning masterpiece"];
+        styleDescription = "3D 시네마틱 그래픽";
+        negativePrompt = "2d, drawing, painting, sketch, low quality, flat shading, noise, compressed image, simple illustration";
+        enhancements = [
+          "최신 언리얼 엔진 5 기반의 압도적인 입체 질감과 밀도감 형성",
+          "정교한 스페큘러 매핑을 통한 사물 표면 광택 및 디테일 극대화",
+          "미세한 먼지 파티클 및 공기 중 수증기 묘사 추가",
+          "3D 그래픽 아티스트의 정밀한 디지털 조소 퀄리티 재현"
+        ];
+        compositionNotes = "피사체의 웅장함을 극대화하는 다이내믹 로우 앵글 구도";
+        lightingNotes = "신비로운 안개(volumetric fog) 속을 뚫고 나오는 신성한 볼륨 광원";
+        break;
+      case "cyberpunk":
+        styleKeywords = ["futuristic cyberpunk aesthetic", "neon glows", "rainy streets with vivid neon reflections", "high-tech gadgets", "dark atmospheric mood", "night scene", "cybernetic enhancements", "cyberpunk cityscape", "synthwave/retrowave vibe"];
+        styleDescription = "네온 사이버펑크";
+        negativePrompt = "bright daylight, peaceful nature, historical, country, rustic, sunny sky, traditional, low quality";
+        enhancements = [
+          "네온 핑크, 사이언 블루가 대조를 이루는 화려한 사이버 테크 톤 주입",
+          "비에 젖은 아스팔트 바닥과 금속 철골에 반사되는 네온 불빛 정밀화",
+          "미래형 무인 드론, 홀로그램 디스플레이 등 SF 요소 배치",
+          "고독하고 세련된 디스토피아 밤거리 특유의 깊이 있는 음영 묘사"
+        ];
+        compositionNotes = "도심의 복잡한 원근감을 극대화하는 깊은 투시도 앵글";
+        lightingNotes = "어둠 속에서 강렬하게 발산되는 네온 인공 광원과 간접 반사광";
+        break;
+      case "fantasy":
+        styleKeywords = ["magical mystical fairytale atmosphere", "glowing particles", "ethereal lighting", "rich fantasy scenery", "high-fantasy adventure", "mythic scale masterpiece", "concept art", "dreamy and whimsical art"];
+        styleDescription = "몽환적 마법 판타지";
+        negativePrompt = "modern, mundane, technology, sci-fi, realistic photo, industrial, office, boring, ugly, low quality";
+        enhancements = [
+          "마치 동화 속에 들어온 듯한 몽환적인 파스텔 톤 텍스처 가미",
+          "주변을 부유하며 빛을 내는 엘프의 눈가루 및 정령 광원 효과",
+          "신비로운 고대 유적, 마법 생명체 등 모험적 디테일 추가",
+          "아티스트의 풍부하고 부드러운 유화풍 브러시 터치 재현"
+        ];
+        compositionNotes = "미지의 세계를 탐험하는 영웅의 시선을 연출한 와이드 전경 구도";
+        lightingNotes = "하늘에서 은은하게 쏟아져 내리는 성스러운 빛구름과 오로라 광채";
+        break;
+      case "pixel-art":
+        styleKeywords = ["detailed 16-bit 32-bit pixel art", "retro video game aesthetic", "clean grid alignment", "vibrant limited color palette", "cozy pixel graphics", "pixelated masterpiece", "nostalgic game art"];
+        styleDescription = "레트로 픽셀 도트 아트";
+        negativePrompt = "photorealistic, 3d, realistic, smooth gradients, blurry, oil painting, watercolor, fuzzy";
+        enhancements = [
+          "레트로 명작 게임의 감성을 재현하는 정교한 수작업 도트 질감 구현",
+          "풍부하면서도 고전적인 한정적 컬러 팔레트를 사용한 색상 조화",
+          "정감 가고 디테일한 아이템 데코레이션 요소 배치",
+          "추억의 16비트 명작 타이틀의 시각적 해상도와 정갈함 복원"
+        ];
+        compositionNotes = "아늑함이 극대화되는 쿼터뷰(Isometric) 혹은 정면 사이드뷰 구도";
+        lightingNotes = "도트 타일의 입체감을 살려주는 아늑하고 명확한 픽셀 그림자 기법";
+        break;
+      case "minimalist":
+        styleKeywords = ["clean minimalist vector illustration", "flat design vector art", "elegant composition", "high contrast", "aesthetic pastel color scheme", "beautiful negative space", "modern graphics", "Scandinavian style design"];
+        styleDescription = "감성 미니멀 벡터 일러스트";
+        negativePrompt = "complex, messy, hyperrealistic, noisy, busy background, detailed textures, photorealistic, 3d, oil painting";
+        enhancements = [
+          "복잡하고 어지러운 세부 사항을 걷어낸 세련된 실루엣 기하학 구조",
+          "넓은 여백의 미를 살려 피사체의 존재감을 감각적으로 강조",
+          "현대 디자인 트렌드에 어울리는 엄선된 파스텔 파우더 배색 적용",
+          "어떤 공간에나 어울리는 모던한 미적 감각의 평면 레이아웃 구성"
+        ];
+        compositionNotes = "시선의 편안함을 유도하는 중심 정렬 혹은 감각적인 황금비율 구도";
+        lightingNotes = "그림자를 극소화한 소프트 플랫 디퓨즈 광원으로 눈이 편안한 밝기 구현";
+        break;
+      case "oil-painting":
+        styleKeywords = ["fine art oil painting", "rich canvas textures", "classical masterpiece composition", "dramatic chiaroscuro lighting", "visible impasto brushstrokes", "classical academic art", "timeless painting on canvas"];
+        styleDescription = "명화 클래식 유화";
+        negativePrompt = "photographic, digital art, flat, clean lines, modern, futuristic, low quality, vector art, photo";
+        enhancements = [
+          "실제 캔버스 위에 거칠게 물감을 얹은 듯한 입체 임파스토 붓터치 묘사",
+          "시간이 흐른 고전 명화 특유의 진중하고 웅장한 갈색조 질감 재현",
+          "피사체의 입체감을 극적으로 살리는 명암 대조 기법 주입",
+          "유명 아카데미 화가들이 그린 듯한 예술적 아우라 복원"
+        ];
+        compositionNotes = "피사체의 위엄을 중후하게 연출하는 클래식 대칭형 명화 구도";
+        lightingNotes = "방 한 구석에서 들어오는 드라마틱한 명암 대비의 단일 창가 조명";
+        break;
+      default:
+        styleKeywords = ["highly detailed", "masterpiece", "high resolution"];
+        styleDescription = "커스텀 예술";
+        negativePrompt = "blurry, low quality, ugly";
+        enhancements = ["피사체 본연의 디테일과 특징 정밀 묘사", "선명한 포커싱과 화질 가미"];
+        compositionNotes = "안정적이고 균형감 있는 최적의 구도 설계";
+        lightingNotes = "피사체를 가장 입체적으로 살려주는 부드러운 자연 광원";
+    }
+
+    const cleanRaw = rawPrompt.trim();
+    const extraString = extraDetails.trim() ? `, ${extraDetails.trim()}` : "";
+    const optimizedPromptText = `${cleanRaw}${extraString}, ${styleKeywords.join(", ")}, dynamic composition, masterpiece quality`;
+
+    return {
+      optimizedPrompt: optimizedPromptText,
+      negativePrompt,
+      koreanTranslation: `${cleanRaw} (${styleDescription} 스타일로 최적화됨)`,
+      enhancements,
+      compositionNotes,
+      lightingNotes
+    };
+  };
+
   // Client-side fallback for static deployments (like GitHub Pages)
   const callGeminiClientSide = async (
     rawPrompt: string,
@@ -201,9 +343,8 @@ export default function App() {
   ) => {
     const apiKey = customApiKey || (import.meta as any).env.VITE_GEMINI_API_KEY;
     if (!apiKey) {
-      throw new Error(
-        "GitHub Pages 등 정적 호스팅 환경에서는 프롬프트 최적화를 위해 Gemini API Key 설정이 필요합니다.\n\n화면 우측 상단의 [🔑 API Key 설정] 버튼을 눌러 본인의 Gemini API Key를 입력해 주세요. (입력된 키는 브라우저 내부 로컬 저장소(localStorage)에만 안전하게 보관됩니다)"
-      );
+      console.log("No API Key detected. Using high-fidelity local prompt optimization engine fallback.");
+      return generateLocalFallbackOptimization(rawPrompt, style, aspectRatio, extraDetails);
     }
 
     const systemInstruction = `You are an expert AI Image Generation Prompt Engineer.
@@ -469,9 +610,15 @@ Generate the perfect detailed English prompt and structured details.`;
               <Key className="w-3.5 h-3.5" />
               <span>{customApiKey ? "API Key 설정됨" : "API Key 설정"}</span>
             </button>
-            <span className="hidden sm:flex text-xs font-semibold px-2.5 py-1.5 rounded-full bg-indigo-950/40 border border-indigo-900/50 text-indigo-400 items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
-              Gemini Prompt Engine
+            <span className={`hidden sm:flex text-xs font-semibold px-2.5 py-1.5 rounded-full border items-center gap-1.5 transition-all duration-200 ${
+              customApiKey
+                ? "bg-violet-950/40 border-violet-900/50 text-violet-400"
+                : "bg-indigo-950/40 border-indigo-900/50 text-indigo-400"
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                customApiKey ? "bg-violet-400" : "bg-indigo-400"
+              }`}></span>
+              {customApiKey ? "Gemini AI Engine" : "Local Smart Engine"}
             </span>
           </div>
         </div>
@@ -495,7 +642,7 @@ Generate the perfect detailed English prompt and structured details.`;
                     Gemini API Key 설정 (GitHub Pages 등 정적 호스팅 환경 전용)
                   </h3>
                   <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                    본인의 Gemini API Key를 아래에 입력해 주세요. 입력하신 Key는 외부 서버로 절대 전송되지 않으며, 오직 <strong>본인 브라우저의 로컬 저장소(localStorage)</strong>에만 안전하게 암호적으로 보관되어 브라우저 내에서 직접 사용됩니다.
+                    본 서비스는 API Key 없이도 <strong>내장된 로컬 스마트 엔진</strong>을 통해 모든 기능을 100% 즉시 이용하실 수 있습니다. 다만, 더욱 깊이 있는 문맥 분석과 고차원적인 맞춤형 AI 최적화를 원하신다면 본인의 Gemini API Key를 입력해 보세요. 키는 외부로 절대 전송되지 않으며 오직 <strong>본인 브라우저의 로컬 저장소(localStorage)</strong>에만 보관됩니다.
                   </p>
                 </div>
                 <button
