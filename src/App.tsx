@@ -181,6 +181,108 @@ export default function App() {
     "State-of-the-art AI 전용 영어 프롬프트로 최종 정제 중..."
   ];
 
+  // Client-side fallback for static deployments (like GitHub Pages)
+  const callGeminiClientSide = async (
+    rawPrompt: string,
+    style: string,
+    aspectRatio: string,
+    extraDetails: string
+  ) => {
+    const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        "GitHub Pages 등 정적 호스팅 환경에서는 프롬프트 최적화를 위해 VITE_GEMINI_API_KEY 설정이 필요합니다.\n\n로컬 .env 파일에 VITE_GEMINI_API_KEY를 설정하시거나, GitHub Secrets에 주입하여 빌드해 주세요."
+      );
+    }
+
+    const systemInstruction = `You are an expert AI Image Generation Prompt Engineer.
+Your task is to take a rough, basic, or poorly phrased user prompt (often in Korean or English) and expand/transform it into a highly detailed, professional, and descriptive image generation prompt in English.
+The optimized prompt must be optimized for state-of-the-art models like Midjourney, Stable Diffusion, and Imagen 3.
+
+Style Guidelines:
+- "photorealistic": photorealistic, 8k resolution, cinematic lighting, dramatic shadows, realistic textures, hyper-detailed, raytracing, sharp focus.
+- "anime": beautifully detailed anime illustration, vibrant colors, clean lines, cell-shaded, high quality, expressive characters, beautiful background scenery.
+- "cinematic-3d": Octane render, Unreal Engine 5 style, 3D digital art, volumetric fog, realistic light scattering, depth of field, masterpiece.
+- "cyberpunk": futuristic cyberpunk aesthetic, neon glows, rainy streets, reflections, high-tech gadgets, dark atmospheric mood.
+- "fantasy": magical, mystical, fairytale atmosphere, glowing particles, ethereal lighting, rich brushstrokes, epic scale fantasy scenery.
+- "pixel-art": detailed 16-bit/32-bit pixel art, retro video game aesthetic, clean grid, vibrant color palette.
+- "minimalist": clean minimalist vector illustration, flat design, elegant composition, high contrast, aesthetic color palette, beautiful negative space.
+- "oil-painting": fine art oil painting, rich canvas textures, classical composition, dramatic chiaroscuro lighting, visible impasto brushstrokes.
+
+Please return a JSON response matching the requested schema. Provide:
+1. "optimizedPrompt": The perfect expanded English prompt. It must be descriptive, detailing the subject, setting, composition, camera shot type, lighting, textures, colors, and styling cues. Keep it in English.
+2. "negativePrompt": Suitable negative prompt modifiers to avoid bad proportions, blurry details, etc.
+3. "koreanTranslation": A beautiful, accurate Korean translation of the optimized prompt.
+4. "enhancements": List of specific keywords, elements, and ideas you added to enrich the user's rough description.
+5. "compositionNotes": Details about the camera shot, angle, and framing.
+6. "lightingNotes": Details about the lighting mood, color palette, and atmospheric effects.
+
+Ensure that even if the input is short (e.g. "검은 고양이"), you expand it into an epic masterpiece scene based on the chosen style!`;
+
+    const promptText = `User Rough Prompt: "${rawPrompt}"
+Chosen Style: ${style}
+Aspect Ratio: ${aspectRatio}
+Extra User Details/Mood: "${extraDetails}"
+
+Generate the perfect detailed English prompt and structured details.`;
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: promptText
+                }
+              ]
+            }
+          ],
+          systemInstruction: {
+            parts: [
+              {
+                text: systemInstruction
+              }
+            ]
+          },
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                optimizedPrompt: { type: "STRING" },
+                negativePrompt: { type: "STRING" },
+                koreanTranslation: { type: "STRING" },
+                enhancements: { type: "ARRAY", items: { type: "STRING" } },
+                compositionNotes: { type: "STRING" },
+                lightingNotes: { type: "STRING" }
+              },
+              required: ["optimizedPrompt", "negativePrompt", "koreanTranslation", "enhancements", "compositionNotes", "lightingNotes"]
+            }
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Gemini API 호출 실패 (코드: ${response.status}): ${errText}`);
+    }
+
+    const json = await response.json();
+    const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      throw new Error("Gemini API로부터 올바른 응답을 받지 못했습니다.");
+    }
+
+    return JSON.parse(text.trim());
+  };
+
   // Action: Handle Prompt Optimization
   const handleOptimize = async () => {
     if (!rawPrompt.trim()) return;
@@ -191,26 +293,40 @@ export default function App() {
     setImageError(null);
 
     try {
-      const response = await fetch("/api/optimize-prompt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rawPrompt,
-          style: selectedStyle,
-          aspectRatio: selectedRatio,
-          extraDetails
-        })
-      });
+      let data = null;
 
-      const resData = await response.json();
-      if (resData.success && resData.data) {
-        setOptimizedData(resData.data);
-      } else {
-        throw new Error(resData.error || "프롬프트 생성에 실패했습니다.");
+      // 1. Try server API first
+      try {
+        const response = await fetch("/api/optimize-prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rawPrompt,
+            style: selectedStyle,
+            aspectRatio: selectedRatio,
+            extraDetails
+          })
+        });
+
+        if (response.ok) {
+          const resData = await response.json();
+          if (resData.success && resData.data) {
+            data = resData.data;
+          }
+        }
+      } catch (serverErr) {
+        console.log("Server optimization API unavailable or failed, falling back to client-side direct Gemini call...", serverErr);
       }
+
+      // 2. Client-side Gemini API fallback
+      if (!data) {
+        data = await callGeminiClientSide(rawPrompt, selectedStyle, selectedRatio, extraDetails);
+      }
+
+      setOptimizedData(data);
     } catch (err: any) {
       console.error(err);
-      alert(err.message || "서버와 통신하는 도중 오류가 발생했습니다.");
+      alert(err.message || "프롬프트를 최적화하는 도중 에러가 발생했습니다.");
     } finally {
       setIsOptimizing(false);
     }
@@ -225,22 +341,60 @@ export default function App() {
     setGeneratedImageUrl(null);
     setImageError(null);
 
-    try {
-      const response = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: promptToUse,
-          aspectRatio: selectedRatio
-        })
-      });
+    // Map the string aspect ratio to pixel dimensions for Pollinations AI
+    let width = 1024;
+    let height = 1024;
+    
+    if (selectedRatio === "9:16") {
+      width = 576;
+      height = 1024;
+    } else if (selectedRatio === "16:9") {
+      width = 1024;
+      height = 576;
+    } else if (selectedRatio === "3:4") {
+      width = 768;
+      height = 1024;
+    } else if (selectedRatio === "4:3") {
+      width = 1024;
+      height = 768;
+    }
 
-      const resData = await response.json();
-      if (resData.success && resData.imageUrl) {
-        setGeneratedImageUrl(resData.imageUrl);
-      } else {
-        throw new Error(resData.error || "이미지 생성 실패");
+    const seed = Math.floor(Math.random() * 9999999);
+    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptToUse)}?width=${width}&height=${height}&seed=${seed}&nologo=true&private=true&enhance=false`;
+
+    try {
+      let imageUrlToSet = null;
+
+      // 1. Try server API first
+      try {
+        const response = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: promptToUse,
+            aspectRatio: selectedRatio
+          })
+        });
+
+        if (response.ok) {
+          const resData = await response.json();
+          if (resData.success && resData.imageUrl) {
+            imageUrlToSet = resData.imageUrl;
+          }
+        }
+      } catch (serverErr) {
+        console.log("Server image API unavailable, using direct Pollinations client URL...", serverErr);
       }
+
+      // 2. Client-side direct Pollinations fallback
+      if (!imageUrlToSet) {
+        const imageRes = await fetch(pollinationsUrl);
+        if (!imageRes.ok) throw new Error(`이미지 서버 응답 실패 (상태 코드: ${imageRes.status})`);
+        const blob = await imageRes.blob();
+        imageUrlToSet = URL.createObjectURL(blob);
+      }
+
+      setGeneratedImageUrl(imageUrlToSet);
     } catch (err: any) {
       console.error(err);
       setImageError(err.message || "이미지 생성 중 알 수 없는 에러가 발생했습니다.");
