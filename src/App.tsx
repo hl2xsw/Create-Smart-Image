@@ -16,7 +16,8 @@ import {
   HelpCircle,
   AlertCircle,
   Code,
-  Info
+  Info,
+  Key
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -148,6 +149,16 @@ export default function App() {
   const [selectedRatio, setSelectedRatio] = useState("1:1");
   const [extraDetails, setExtraDetails] = useState("");
 
+  // API key configuration for static deployments (e.g. GitHub Pages)
+  const [customApiKey, setCustomApiKey] = useState(() => {
+    try {
+      return localStorage.getItem("USER_GEMINI_API_KEY") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [showKeyInput, setShowKeyInput] = useState(false);
+
   // Loading & UX states
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [optimizeStep, setOptimizeStep] = useState(0);
@@ -188,10 +199,10 @@ export default function App() {
     aspectRatio: string,
     extraDetails: string
   ) => {
-    const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
+    const apiKey = customApiKey || (import.meta as any).env.VITE_GEMINI_API_KEY;
     if (!apiKey) {
       throw new Error(
-        "GitHub Pages 등 정적 호스팅 환경에서는 프롬프트 최적화를 위해 VITE_GEMINI_API_KEY 설정이 필요합니다.\n\n로컬 .env 파일에 VITE_GEMINI_API_KEY를 설정하시거나, GitHub Secrets에 주입하여 빌드해 주세요."
+        "GitHub Pages 등 정적 호스팅 환경에서는 프롬프트 최적화를 위해 Gemini API Key 설정이 필요합니다.\n\n화면 우측 상단의 [🔑 API Key 설정] 버튼을 눌러 본인의 Gemini API Key를 입력해 주세요. (입력된 키는 브라우저 내부 로컬 저장소(localStorage)에만 안전하게 보관됩니다)"
       );
     }
 
@@ -441,13 +452,106 @@ Generate the perfect detailed English prompt and structured details.`;
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-950/40 border border-indigo-900/50 text-indigo-400 flex items-center gap-1.5">
+            <button
+              onClick={() => setShowKeyInput(!showKeyInput)}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition-all duration-200 ${
+                customApiKey
+                  ? "bg-emerald-950/40 border-emerald-900/50 text-emerald-400 hover:bg-emerald-900/30"
+                  : "bg-amber-950/40 border-amber-900/50 text-amber-400 hover:bg-amber-900/30 animate-pulse"
+              }`}
+              title="GitHub Pages 등 정적 호스팅 환경용 API Key 설정"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>{customApiKey ? "API Key 설정됨" : "API Key 설정"}</span>
+            </button>
+            <span className="hidden sm:flex text-xs font-semibold px-2.5 py-1.5 rounded-full bg-indigo-950/40 border border-indigo-900/50 text-indigo-400 items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
-              Gemini 3.5 Turbo Prompt Engine
+              Gemini Prompt Engine
             </span>
           </div>
         </div>
       </header>
+
+      {/* API Key Drawer/Panel */}
+      <AnimatePresence>
+        {showKeyInput && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden bg-slate-900/90 border-b border-slate-800"
+          >
+            <div className="max-w-3xl mx-auto px-6 py-6 flex flex-col gap-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                    <Key className="w-4 h-4 text-violet-400" />
+                    Gemini API Key 설정 (GitHub Pages 등 정적 호스팅 환경 전용)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    본인의 Gemini API Key를 아래에 입력해 주세요. 입력하신 Key는 외부 서버로 절대 전송되지 않으며, 오직 <strong>본인 브라우저의 로컬 저장소(localStorage)</strong>에만 안전하게 암호적으로 보관되어 브라우저 내에서 직접 사용됩니다.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowKeyInput(false)}
+                  className="text-xs text-slate-500 hover:text-slate-300 px-2 py-1"
+                >
+                  닫기
+                </button>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder="AIzaSy로 시작하는 API Key를 입력하세요"
+                  value={customApiKey}
+                  onChange={(e) => {
+                    const key = e.target.value;
+                    setCustomApiKey(key);
+                    try {
+                      if (key.trim()) {
+                        localStorage.setItem("USER_GEMINI_API_KEY", key.trim());
+                      } else {
+                        localStorage.removeItem("USER_GEMINI_API_KEY");
+                      }
+                    } catch (err) {
+                      console.error("Failed to save API key to localStorage:", err);
+                    }
+                  }}
+                  className="flex-1 text-sm bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500/50"
+                />
+                {customApiKey && (
+                  <button
+                    onClick={() => {
+                      setCustomApiKey("");
+                      try {
+                        localStorage.removeItem("USER_GEMINI_API_KEY");
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    }}
+                    className="text-xs px-3 bg-red-950/50 text-red-400 border border-red-900/30 rounded-lg hover:bg-red-900/30 transition-all"
+                  >
+                    지우기
+                  </button>
+                )}
+              </div>
+
+              <div className="text-[11px] text-slate-500 flex flex-col gap-1 leading-relaxed">
+                <span className="flex items-center gap-1.5 text-amber-500/90">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                  <strong>API Key 발급 방법:</strong> <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-400 font-bold">Google AI Studio</a>에서 무료로 즉시 발급 가능합니다.
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                  본 웹사이트는 서버 백엔드 통신 없이, 브라우저 내에서 직접 구글 API 서버로 직접 연결하므로 타인에게 키가 누출되지 않고 절대적으로 안전합니다.
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Main Content Workspace */}
       <main className="max-w-7xl mx-auto px-4 py-8 lg:px-8">
