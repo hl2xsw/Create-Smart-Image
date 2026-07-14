@@ -163,6 +163,7 @@ export default function App() {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [optimizeStep, setOptimizeStep] = useState(0);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [isImageLoading, setIsImageLoading] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
 
   // Results
@@ -171,6 +172,41 @@ export default function App() {
 
   // Copy indicator states
   const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  // Handle image download robustly (handles object URLs, data URLs, and external cross-origin URLs)
+  const handleDownloadImage = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!generatedImageUrl) return;
+
+    try {
+      if (generatedImageUrl.startsWith("blob:") || generatedImageUrl.startsWith("data:")) {
+        const link = document.createElement("a");
+        link.href = generatedImageUrl;
+        link.download = `prompt_wizard_${Date.now()}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return;
+      }
+
+      // Fetch external URL as blob to bypass cross-origin browser download navigation restriction
+      const res = await fetch(generatedImageUrl);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `prompt_wizard_${Date.now()}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+    } catch (err) {
+      console.warn("Direct blob download failed, opening in new tab instead.", err);
+      window.open(generatedImageUrl, "_blank");
+    }
+  };
 
   // Loading message animation helper
   useEffect(() => {
@@ -201,17 +237,43 @@ export default function App() {
     if (!text.trim()) return "";
     if (!isKorean(text)) return text;
 
+    // 1. Try Google Translate Client API (Most robust, free, no CORS)
     try {
-      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=ko|en`);
-      if (!res.ok) throw new Error("Translation failed");
-      const data = await res.json();
-      if (data && data.responseData && data.responseData.translatedText) {
-        return data.responseData.translatedText;
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=en&dt=t&q=${encodeURIComponent(text)}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data[0]) {
+          const translated = data[0].map((item: any) => item[0]).join("").trim();
+          if (translated) {
+            console.log("Google Translate (Ko->En) successful:", translated);
+            return translated;
+          }
+        }
       }
     } catch (err) {
-      console.warn("MyMemory translation failed, using offline fallback.", err);
+      console.warn("Google Translate (Ko->En) failed, trying MyMemory...", err);
     }
 
+    // 2. Fallback: MyMemory API
+    try {
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=ko|en`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data[0]) {
+          // Some responses might be parsed differently depending on API version
+          return data[0].map((item: any) => item[0]).join("").trim();
+        }
+        if (data && data.responseData && data.responseData.translatedText) {
+          console.log("MyMemory Translate (Ko->En) successful:", data.responseData.translatedText);
+          return data.responseData.translatedText;
+        }
+      }
+    } catch (err) {
+      console.warn("MyMemory translation failed, using offline dictionary fallback.", err);
+    }
+
+    // 3. Fallback: Local Dictionary
     let fallbackText = text;
     const dictionary: { [key: string]: string } = {
       "전기차": "electric car",
@@ -271,6 +333,47 @@ export default function App() {
     });
 
     return fallbackText;
+  };
+
+  const translateEnToKo = async (text: string): Promise<string> => {
+    if (!text.trim()) return "";
+
+    // 1. Try Google Translate Client API (En->Ko translation)
+    try {
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ko&dt=t&q=${encodeURIComponent(text)}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data[0]) {
+          const translated = data[0].map((item: any) => item[0]).join("").trim();
+          if (translated) {
+            console.log("Google Translate (En->Ko) successful:", translated);
+            return translated;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Google Translate (En->Ko) failed, trying MyMemory...", err);
+    }
+
+    // 2. Fallback: MyMemory API
+    try {
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|ko`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data[0]) {
+          return data[0].map((item: any) => item[0]).join("").trim();
+        }
+        if (data && data.responseData && data.responseData.translatedText) {
+          console.log("MyMemory Translate (En->Ko) successful:", data.responseData.translatedText);
+          return data.responseData.translatedText;
+        }
+      }
+    } catch (err) {
+      console.warn("MyMemory translation (En->Ko) failed.", err);
+    }
+
+    return text;
   };
 
   // Local Rule-Based Prompt Optimization Engine (Fallback for Offline / No-API-Key deployments)
@@ -402,8 +505,15 @@ export default function App() {
         lightingNotes = "피사체를 가장 입체적으로 살려주는 부드러운 자연 광원";
     }
 
-    const cleanRaw = translatedRaw.trim();
-    const extraString = translatedExtra.trim() ? `, ${translatedExtra.trim()}` : "";
+    const cleanPromptSegment = (text: string): string => {
+      return text.trim()
+        .replace(/[.,\s]+$/, "") // Remove trailing periods, commas, or spaces
+        .trim();
+    };
+
+    const cleanRaw = cleanPromptSegment(translatedRaw);
+    const cleanExtra = cleanPromptSegment(translatedExtra);
+    const extraString = cleanExtra ? `, ${cleanExtra}` : "";
     const optimizedPromptText = `${cleanRaw}${extraString}, ${styleKeywords.join(", ")}, dynamic composition, masterpiece quality`;
 
     return {
@@ -428,7 +538,19 @@ export default function App() {
       console.log("No API Key detected. Performing smart translation & local engine fallback.");
       const translatedRaw = await translateKoToEn(rawPrompt);
       const translatedExtra = await translateKoToEn(extraDetails);
-      return generateLocalFallbackOptimization(translatedRaw, style, aspectRatio, translatedExtra, rawPrompt);
+      const localResult = generateLocalFallbackOptimization(translatedRaw, style, aspectRatio, translatedExtra, rawPrompt);
+
+      // Translate the optimized English prompt back to Korean for beautiful translation feedback
+      try {
+        const finalKoTranslation = await translateEnToKo(localResult.optimizedPrompt);
+        if (finalKoTranslation && finalKoTranslation !== localResult.optimizedPrompt) {
+          localResult.koreanTranslation = finalKoTranslation;
+        }
+      } catch (transErr) {
+        console.warn("Failed to translate optimized prompt back to Korean:", transErr);
+      }
+
+      return localResult;
     }
 
     const systemInstruction = `You are an expert AI Image Generation Prompt Engineer.
@@ -574,6 +696,7 @@ Generate the perfect detailed English prompt and structured details.`;
     if (!promptToUse) return;
 
     setIsGeneratingImage(true);
+    setIsImageLoading(true);
     setGeneratedImageUrl(null);
     setImageError(null);
 
@@ -622,23 +745,16 @@ Generate the perfect detailed English prompt and structured details.`;
         console.log("Server image API unavailable, using direct Pollinations client URL...", serverErr);
       }
 
-      // 2. Client-side direct Pollinations fallback
+      // 2. Client-side direct Pollinations fallback (Zero double-fetch, no CORS, extremely fast)
       if (!imageUrlToSet) {
-        try {
-          const imageRes = await fetch(pollinationsUrl);
-          if (!imageRes.ok) throw new Error(`이미지 서버 응답 실패 (상태 코드: ${imageRes.status})`);
-          const blob = await imageRes.blob();
-          imageUrlToSet = URL.createObjectURL(blob);
-        } catch (fetchErr) {
-          console.warn("Direct image blob fetch failed, falling back to raw image URL...", fetchErr);
-          imageUrlToSet = pollinationsUrl;
-        }
+        imageUrlToSet = pollinationsUrl;
       }
 
       setGeneratedImageUrl(imageUrlToSet);
     } catch (err: any) {
       console.error(err);
       setImageError(err.message || "이미지 생성 중 알 수 없는 에러가 발생했습니다.");
+      setIsImageLoading(false);
     } finally {
       setIsGeneratingImage(false);
     }
@@ -1155,8 +1271,8 @@ Generate the perfect detailed English prompt and structured details.`;
                 </div>
               )}
 
-              {/* Case 3: Prompt is optimized but currently generating image */}
-              {optimizedData && isGeneratingImage && (
+              {/* Case 3: Prompt is optimized but currently generating or loading image */}
+              {optimizedData && (isGeneratingImage || (generatedImageUrl && isImageLoading)) && !imageError && (
                 <div className="text-center space-y-5">
                   <div className="relative mx-auto w-16 h-16">
                     <div className="w-16 h-16 rounded-full border-4 border-cyan-500/20 border-t-cyan-400 animate-spin"></div>
@@ -1171,15 +1287,24 @@ Generate the perfect detailed English prompt and structured details.`;
                 </div>
               )}
 
-              {/* Case 4: Image creation succeeded */}
-              {optimizedData && generatedImageUrl && !isGeneratingImage && (
-                <div className="w-full h-full flex flex-col items-center justify-center space-y-4">
+              {/* Case 4: Image creation succeeded (rendered in background if still downloading) */}
+              {optimizedData && generatedImageUrl && !isGeneratingImage && !imageError && (
+                <div className={`w-full h-full flex flex-col items-center justify-center space-y-4 ${isImageLoading ? "absolute opacity-0 pointer-events-none" : "opacity-100 transition-opacity duration-500"}`}>
                   <div className="relative rounded-lg border border-slate-800 bg-slate-900 overflow-hidden shadow-2xl max-w-full max-h-[460px] flex items-center justify-center">
                     <img 
                       src={generatedImageUrl} 
                       alt="Generated AI Preview" 
                       className="max-h-[400px] object-contain transition-all duration-500 hover:scale-[1.01]"
                       referrerPolicy="no-referrer"
+                      onLoad={() => {
+                        console.log("Image loaded successfully in browser!");
+                        setIsImageLoading(false);
+                      }}
+                      onError={() => {
+                        console.warn("Failed to load image in browser");
+                        setIsImageLoading(false);
+                        setImageError("무료 이미지 생성 엔진 트래픽 초과 혹은 불안정 상태입니다. 아래 '다시 그리기'를 눌러 다시 시도해주십시오.");
+                      }}
                     />
                     
                     {/* Badge */}
@@ -1192,14 +1317,13 @@ Generate the perfect detailed English prompt and structured details.`;
 
                   {/* Action Group */}
                   <div className="flex items-center gap-2.5">
-                    <a 
-                      href={generatedImageUrl} 
-                      download={`prompt_wizard_${Date.now()}.jpg`}
-                      className="text-xs bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 px-4 py-2 rounded-xl flex items-center gap-2 transition-all active:scale-95 font-semibold"
+                    <button 
+                      onClick={handleDownloadImage}
+                      className="text-xs bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 px-4 py-2 rounded-xl flex items-center gap-2 transition-all active:scale-95 font-semibold cursor-pointer"
                     >
                       <Download className="w-4 h-4 text-cyan-400" />
                       <span>이미지 다운로드</span>
-                    </a>
+                    </button>
                     <button
                       onClick={() => handleGenerateImage(optimizedData.optimizedPrompt)}
                       className="text-xs bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 px-4 py-2 rounded-xl flex items-center gap-2 transition-all active:scale-95 font-semibold cursor-pointer"
